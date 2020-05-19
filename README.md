@@ -25,5 +25,5 @@ make
 ```bash
 python3 -m pip install -U pygame==2.0.0.dev6 --user
 python3 -m pip install -U numpy --user
-python3 test/multitouch-test.py
+python3 src/scripts/multitouch-test.py
 ```

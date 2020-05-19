@@ -22,6 +22,8 @@ target_link_libraries( ${library_name}
     ${LIBMT}
 )
 
+configure_file(scripts/nodegraphhooks.py "$ENV{HFS}/houdini/python2.7libs" COPYONLY)
+
 set(CPACK_PROJECT_NAME ${PROJECT_NAME})
 set(CPACK_PROJECT_VERSION ${PROJECT_VERSION})
 include(CPack)
