@@ -4,7 +4,7 @@
 #include <math.h>
 #include <unistd.h>
 #include <CoreFoundation/CoreFoundation.h>
-#include "trackpad.h"
+#include "multitouch-device.h"
 
 MTDeviceRef MTDeviceCreateDefault();
 void MTRegisterContactFrameCallback(MTDeviceRef, MTContactCallbackFunction);
@@ -16,8 +16,6 @@ int startDevice(MTContactCallbackFunction callback) {
   dev = MTDeviceCreateDefault();
   MTRegisterContactFrameCallback(dev, callback);
   MTDeviceStart(dev, 0);
-  // printf("Ctrl-C to abort\n");
-  // sleep(-1);
   return 0;
 }
 

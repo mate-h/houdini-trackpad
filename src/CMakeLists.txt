@@ -5,9 +5,9 @@ list( APPEND CMAKE_PREFIX_PATH "$ENV{HFS}/toolkit/cmake" )
 set( library_name TrackpadHook )
 # Add a library and its source files.
 add_library( ${library_name} SHARED 
-    trackpad/trackpad.h
-    trackpad/trackpad.c
-    trackpadhook.cpp
+    multitouch/multitouch-device.h
+    multitouch/multitouch-device.c
+    trackpad-hook.cc
 )
 
 find_package( Houdini REQUIRED )
@@ -15,11 +15,11 @@ target_link_libraries( ${library_name}
     Houdini
 )
 
-# Link MultitouchSupport Apple framework
-find_library( LIBS MultitouchSupport /System/Library/PrivateFrameworks )
-message(STATUS "Found library: ${LIBS}" )
+# Link against Apple frameworks
+find_library( LIBMT MultitouchSupport /System/Library/PrivateFrameworks )
+message(STATUS "Found library: ${LIBMT}" )
 target_link_libraries( ${library_name}
-    ${LIBS}
+    ${LIBMT}
 )
 
 set(CPACK_PROJECT_NAME ${PROJECT_NAME})

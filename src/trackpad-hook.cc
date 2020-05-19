@@ -1,5 +1,5 @@
 extern "C" {
-	#include "trackpad/trackpad.h"
+	#include "multitouch/multitouch-device.h"
 }
 
 #define _USE_MATH_DEFINES
@@ -55,10 +55,10 @@ public:
 
 		uint currentGesture = NO_GESTURE;
 		uint prevGesture = NO_GESTURE;
+		fpreal prevdistance;
 		bool shiftDown = false;
 		bool altDown = false;
 		bool ctrlDown = false;
-		fpreal prevdistance;
 		high_resolution_clock::time_point prevTime;
 
 		void trackpadCallback(int device, Finger *data, int nFingers, double timestamp, int frame) {
@@ -84,6 +84,27 @@ public:
 			DM_VPortAgent &vport = viewport();
 			DM_ViewportType viewType = vport.getViewType();
 			GUI_ViewState &viewState = vport.getViewStateRef();
+			HOM_GeometryViewport* currentViewport = scene->curViewport();
+			std::string currentViewportType = currentViewport->type().name();
+			bool isCurrentViewport = false;
+			if (currentViewportType == "Perspective" && viewType == DM_VIEWPORT_PERSPECTIVE) {
+				isCurrentViewport = true;
+			}
+			else if (currentViewportType == "Top" && viewType == DM_VIEWPORT_TOP) {
+				isCurrentViewport = true;
+			}
+			else if (currentViewportType == "Right" && viewType == DM_VIEWPORT_RIGHT) {
+				isCurrentViewport = true;
+			}
+			else if (currentViewportType == "Front" && viewType == DM_VIEWPORT_FRONT) {
+				isCurrentViewport = true;
+			}
+			else if (currentViewportType == "Left" && viewType == DM_VIEWPORT_LEFT) {
+				isCurrentViewport = true;
+			}
+			if (!isCurrentViewport) {
+				return;
+			}
 			
 			Finger *fa = &data[0];
 			Finger *fb = &data[1];
@@ -128,15 +149,14 @@ public:
 			// calculate average velocity of the two fingers together
 			fpreal vavgx = (shiftDown ? slowVelScale : velScale) * (fa->normalized.vel.x + fb->normalized.vel.x) / 2;
 			fpreal vavgy = (shiftDown ? slowVelScale : velScale) * (fa->normalized.vel.y + fb->normalized.vel.y) / 2;
-			
-			
+
 			// if (hoveringScene != NULL && render->getCurrentWindow()->appActive()) {
 			if (viewType == DM_VIEWPORT_PERSPECTIVE || viewType == DM_VIEWPORT_ORTHO) {
 				if (currentGesture == SCROLL_GESTURE) {
-					viewState.dotumble(vavgx, vavgy, 1);
-					// scene->curViewport()->frameBoundingBox();
-					//scene->curViewport()->draw();
-					// 
+					if (ctrlDown) {
+						viewState.scroll(vavgx, vavgy);
+					}
+					else viewState.dotumble(vavgx, vavgy, 1);
 				}
 				else if (currentGesture == ZOOM_GESTURE) {
 					viewState.dolly(zoom);
@@ -149,78 +169,43 @@ public:
 					viewState.zoom(zoom, GUI_ViewParameter::GUI_ZoomItem::GUI_ORTHO_WIDTH);
 			}
 			HOM_BoundingBox box;
-			const uint size = 10;
+			const uint size = 1000;
 			box.setTo({-size, -size, -size, size, size, size});
-			scene->curViewport()->frameBoundingBox(&box);
-			vport.refresh();
-			
-			// }
-			/* 
-			identifier
-				Persistent identifier for each touch -- each "finger" may move around the Fingers[] array, but this will remain the same.
-				
-			normalized.pos.x
-				Current position, from [0..1]
-				
-			size
-				Close to zero if you're barely touching the touch pad
-				
-			angle, majorAxis, minorAxis
-				Describes the ellipsoid of your finger. Yes, you can track rotation of a single finger!
-
-			printf("Frame %7d: Angle %6.2f, ellipse %6.3f x%6.3f; "
-				"position (%6.3f,%6.3f) vel (%6.3f,%6.3f) "
-				"ID %d, state %d [%d %d?] size %6.3f, %6.3f?\n",
-				f->frame,
-				f->angle * 90 / atan2(1,0),
-				f->majorAxis,
-				f->minorAxis,
-				f->normalized.pos.x,
-				f->normalized.pos.y,
-				f->normalized.vel.x,
-				f->normalized.vel.y,
-				f->identifier, f->state, f->foo3, f->foo4,
-				f->size, f->unk2); */
-		// printf("\n");
-		
+			currentViewport->frameBoundingBox(&box);
+			currentViewport->draw();
+			// vport.refresh();
 		}
     
     virtual bool	handleMouseEvent(const DM_MouseHookData &hook_data,
 					 UI_Event *event)
 	{
-			altDown = event->state.altFlags & UI_ALT_KEY;
-			shiftDown = event->state.altFlags & UI_SHIFT_KEY;
-			ctrlDown = event->state.altFlags & UI_CTRL_KEY;
-	    return true;
+		altDown = event->state.altFlags & UI_ALT_KEY;
+		shiftDown = event->state.altFlags & UI_SHIFT_KEY;
+		ctrlDown = event->state.altFlags & UI_CTRL_KEY;
+	  return false;
 	}
     virtual bool	handleMouseWheelEvent(const DM_MouseHookData &hook_data,
 					      UI_Event *event)
 	{		
-			altDown = event->state.altFlags & UI_ALT_KEY;
-			shiftDown = event->state.altFlags & UI_SHIFT_KEY;
-			ctrlDown = event->state.altFlags & UI_CTRL_KEY;
-
-			// event->state.values[Z]
-			// GUI_ViewState &state = viewport().getViewStateRef();
-			// state.dolly(-event->state.values[Z]*0.30);
-			// state.set
-			// std::cout << state.getTransformMatrix()[3][2] << "\n";
-			//viewport().refresh();
-	    return true;
+		altDown = event->state.altFlags & UI_ALT_KEY;
+		shiftDown = event->state.altFlags & UI_SHIFT_KEY;
+		ctrlDown = event->state.altFlags & UI_CTRL_KEY;
+		// consume scroll event
+		return true;
 	}
     virtual bool	handleDoubleClickEvent(
 					    const DM_MouseHookData &hook_data,
 					    UI_Event *event)
 	{
-	    return false;
+		return false;
 	}
 
   virtual bool allowRMBMenu(const DM_MouseHookData &hook_data, UI_Event *event)
 	{
-	    return true;
+		return true;
 	}
 
-	int		bumpRefCount(bool inc)
+	int	bumpRefCount(bool inc)
 	{
 			refCount += (inc?1:-1);
 			return refCount;
@@ -228,34 +213,6 @@ public:
 
 private:
 	int	refCount;
-};
-
-class DM_DummyEventHook : public DM_MouseEventHook
-{
-	public:
-	DM_DummyEventHook(DM_VPortAgent &vport)
-	: DM_MouseEventHook(vport, DM_VIEWPORT_ALL_3D) { }
-    virtual ~DM_DummyEventHook() { }
-	virtual bool	handleMouseEvent(const DM_MouseHookData &hook_data,
-					 UI_Event *event)
-	{
-	    return false;
-	}
-    virtual bool	handleMouseWheelEvent(const DM_MouseHookData &hook_data,
-					      UI_Event *event)
-	{		
-			// std::cout << event->type == UI_EventType::UI_EVENT_MOUSEWHEEL;
-			GUI_ViewState &state = viewport().getViewStateRef();
-			state.dolly(event->state.values[Z]*0.30);
-			viewport().requestDraw();
-	    return true;
-	}
-    virtual bool	handleDoubleClickEvent(
-					    const DM_MouseHookData &hook_data,
-					    UI_Event *event)
-	{
-	    return false;
-	}
 };
 
 UT_Map<int, DM_TrackpadEventHook *> mouseHooks;
