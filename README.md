@@ -13,6 +13,8 @@ Controls:
 
 [Download v0.1 pre-release](https://github.com/mate-h/houdini-trackpad/releases/download/0.1/TrackpadHook.dylib)
 
+Place the `TrackpadHook.dylib` binary in `~/Library/Preferences/houdini/[version]/dso` in order to install.
+
 ## Build from source
 
 ```bash
