@@ -1,5 +1,7 @@
 # houdini-trackpad
 
+![preview](https://github.com/mateh/houdini-trackpad/blob/master/static/houdini-trackpad.webp?raw=true)
+
 This plugin enables multitouch gestures in Houdini's viewport for Macbooks running OSX.
 Controls:
 
