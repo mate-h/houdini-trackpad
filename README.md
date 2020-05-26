@@ -11,6 +11,8 @@ Controls:
 - Rotate using rotate gesture
 - Hold Shift with any gesture to slow down movement
 
+[Download v0.1 pre-release](https://github.com/mate-h/houdini-trackpad/releases/download/0.1/TrackpadHook.dylib)
+
 ## Build from source
 
 ```bash
