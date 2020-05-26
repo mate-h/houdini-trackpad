@@ -8,12 +8,17 @@ Controls:
 - Tumble/scroll using two fingers
 - Dolly/zoom using pinch gesture
 - Pan by holding Alt and two finger scroll
-- Rotate using rotate gesture
 - Hold Shift with any gesture to slow down movement
+
+In `v0.2`:
+
+- Rotate using rotate gesture
 
 [Download v0.1 pre-release](https://github.com/mate-h/houdini-trackpad/releases/download/0.1/TrackpadHook.dylib)
 
 Place the `TrackpadHook.dylib` binary in `~/Library/Preferences/houdini/[version]/dso` in order to install.
+
+<a href="https://www.buymeacoffee.com/mateh" target="_blank"><img src="https://www.buymeacoffee.com/assets/img/custom_images/orange_img.png" alt="Buy Me A Coffee" style="height: 41px !important;width: 174px !important;box-shadow: 0px 3px 2px 0px rgba(190, 190, 190, 0.5) !important;-webkit-box-shadow: 0px 3px 2px 0px rgba(190, 190, 190, 0.5) !important;" ></a>
 
 ## Build from source
 
