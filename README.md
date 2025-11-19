@@ -25,13 +25,24 @@ Place the `TrackpadHook.dylib` binary in `~/Library/Preferences/houdini/[version
 ## Build from source
 
 ```bash
-export VERSION = 17.5.229 # change this to your version of Houdini installation
+# Set your Houdini version (change this to your version of Houdini installation)
+export VERSION=21.0.512
+
+# Source Houdini environment
 source /Applications/Houdini/Houdini$VERSION/Frameworks/Houdini.framework/Versions/Current/Resources/houdini_setup
-git clone https://github.com/mate-h/houdini-trackpad
-cd houdini-trackpad/build
+
+# If you haven't cloned the repo yet:
+# git clone https://github.com/mate-h/houdini-trackpad
+# cd houdini-trackpad
+
+# Create build directory and build
+mkdir -p build
+cd build
 cmake ../src
 make
 ```
+
+The `make` command will automatically build and install the `TrackpadHook.dylib` library directly to your Houdini DSO directory (e.g., `~/Library/Preferences/houdini/21.0/dso/TrackpadHook.dylib`). No separate installation step is needed - the library is ready to use after building!
 
 ## Run test program with python
 
