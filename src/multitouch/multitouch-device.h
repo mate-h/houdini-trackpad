@@ -1,7 +1,12 @@
-// Code from https://web.archive.org/web/20151012175118/http://steike.com/code/multitouch/
+// Code from
+// https://web.archive.org/web/20151012175118/http://steike.com/code/multitouch/
 
-typedef struct { float x,y; } mtPoint;
-typedef struct { mtPoint pos,vel; } mtReadout;
+typedef struct {
+  float x, y;
+} mtPoint;
+typedef struct {
+  mtPoint pos, vel;
+} mtReadout;
 
 typedef struct {
   int frame;
@@ -17,7 +22,7 @@ typedef struct {
 } Finger;
 
 typedef void *MTDeviceRef;
-typedef int (*MTContactCallbackFunction)(int,Finger*,int,double,int);
+typedef int (*MTContactCallbackFunction)(int, Finger *, int, double, int);
 
 int startDevice(MTContactCallbackFunction);
 void stopDevice();
