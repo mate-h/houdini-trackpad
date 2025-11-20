@@ -63,7 +63,7 @@ void requestViewportRedrawOnMainThread(HOM_GeometryViewportCamera *camera) {
 const uint NO_GESTURE = 0;
 const uint SCROLL_GESTURE = 1;
 const uint PINCH_GESTURE = 2;
-const uint ROTATE_GESTURE = 2;
+const uint ROTATE_GESTURE = 3;
 
 class DM_TrackpadEventHook : public DM_MouseEventHook {
 public:
@@ -228,7 +228,6 @@ private:
 };
 
 UT_Map<int, DM_TrackpadEventHook *> mouseHooks;
-UT_Vector2 lastVelocity;
 
 HOM_NetworkEditor *getNetworkEditor() {
   HOM_Module &hou = HOM();
@@ -267,7 +266,8 @@ int trackpadCallback(int device, Finger *data, int nFingers, double timestamp,
   }
   // update timestamps
   high_resolution_clock::time_point time = high_resolution_clock::now();
-  long long elapsed = duration_cast<milliseconds>(time - prevTime).count();
+  long long elapsedNS = duration_cast<nanoseconds>(time - prevTime).count();
+  float elapsed = elapsedNS / 1000000.0;
   prevTime = time;
 
   // calculate zoom factor using distance between fingers
@@ -309,9 +309,6 @@ int trackpadCallback(int device, Finger *data, int nFingers, double timestamp,
     } else if (currentGesture == PINCH_GESTURE) {
       bounds.expand({-zoom * bx * zoomScale, -zoom * by * zoomScale});
     }
-
-    networkEditor->setVisibleBounds(bounds);
-    networkEditor->redraw();
     return 0;
   }
 
