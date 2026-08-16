@@ -5,10 +5,10 @@
 This plugin enables multitouch gestures in Houdini's viewport for Macbooks running OSX.
 Controls:
 
-- Tumble/scroll using two fingers
-- Dolly/zoom using pinch gesture
-- Pan by holding Alt and two finger scroll
-- Hold Shift with any gesture to slow down movement
+- Tumble using two fingers
+- Pan with Shift + two-finger scroll
+- Zoom with Ctrl/Cmd + two-finger scroll, or pinch
+- In the network editor, two-finger scroll pans (no Shift) and pinch zooms
 
 Coming in `v0.3`:
 

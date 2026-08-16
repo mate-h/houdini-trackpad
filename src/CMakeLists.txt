@@ -11,6 +11,8 @@ add_library( ${library_name} SHARED
 )
 
 find_package( Houdini REQUIRED )
+# Houdini 22 headers require this; hcustom sets it, but HoudiniConfig.cmake does not.
+target_compile_definitions( ${library_name} PRIVATE USE_VULKAN=1 )
 target_link_libraries( ${library_name}
     Houdini
 )
@@ -22,7 +24,15 @@ target_link_libraries( ${library_name}
     ${LIBMT}
 )
 
-configure_file(scripts/nodegraphhooks.py "$ENV{HFS}/houdini/python2.7libs" COPYONLY)
+# Network-editor mousewheel consumer. Install into the user prefs tree, not $HFS
+# (Houdini 22+ uses python3.13libs and the app bundle is not writable).
+if(DEFINED ENV{HOUDINI_USER_PREF_DIR})
+    set(_houdini_user_python "$ENV{HOUDINI_USER_PREF_DIR}/python3.13libs")
+else()
+    set(_houdini_user_python "$ENV{HOME}/Library/Preferences/houdini/22.0/python3.13libs")
+endif()
+file(MAKE_DIRECTORY "${_houdini_user_python}")
+configure_file(scripts/nodegraphhooks.py "${_houdini_user_python}/nodegraphhooks.py" COPYONLY)
 
 set(CPACK_PROJECT_NAME ${PROJECT_NAME})
 set(CPACK_PROJECT_VERSION ${PROJECT_VERSION})

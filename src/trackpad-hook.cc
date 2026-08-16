@@ -12,7 +12,9 @@ extern "C" {
 #include <GUI/GUI_GeoRender.h>
 #include <GUI/GUI_ViewState.h>
 #include <HOM/HOM_BoundingBox.h>
+#include <HOM/HOM_BoundingRect.h>
 #include <HOM/HOM_GeometryViewport.h>
+#include <HOM/HOM_Vector2.h>
 #include <HOM/HOM_GeometryViewportCamera.h>
 #include <HOM/HOM_Matrix3.h>
 #include <HOM/HOM_Matrix4.h>
@@ -27,11 +29,9 @@ extern "C" {
 #include <UT/UT_DSOVersion.h>
 #include <UT/UT_Map.h>
 #include <UT/UT_VectorTypes.h>
-#include <chrono>
+#include <algorithm>
 #include <cmath>
 #include <dispatch/dispatch.h>
-
-using namespace std::chrono;
 
 namespace HDK_Plugin {
 
@@ -72,13 +72,12 @@ public:
   virtual ~DM_TrackpadEventHook() {}
 
   const uint velScale = 10; // multiplier
-  const uint slowVelScale = 1;
   const uint zoomScale = 10;    // multiplier
-  const uint slowZoomScale = 1; // multiplier
 
   bool shiftDown = false;
   bool altDown = false;
   bool ctrlDown = false;
+  bool cmdDown = false;
 
   // Deferred camera update to avoid re-entrancy crashes
   HOM_GeometryViewportCamera *deferredCamera = NULL;
@@ -164,16 +163,18 @@ public:
     bool isPerspective = camera->isPerspective();
     bool isOrtho = camera->isOrthographic();
 
-    // calculate average velocity of the two fingers together
-    fpreal dx = (shiftDown ? slowVelScale : velScale) * vx;
-    fpreal dy = (shiftDown ? slowVelScale : velScale) * vy;
-    fpreal dzoom = (shiftDown ? slowZoomScale : zoomScale) * zoom;
+    fpreal dx = velScale * vx;
+    fpreal dy = velScale * vy;
+    fpreal dzoom = zoomScale * zoom;
+    fpreal scrollZoom = zoomScale * vy;
+    bool zoomModifier = ctrlDown || cmdDown;
 
     // Apply view transformations
     if (isPerspective) {
-      // Perspective view - use tumble/dolly
       if (currentGesture == SCROLL_GESTURE) {
-        if (ctrlDown) {
+        if (zoomModifier) {
+          viewState.dolly(scrollZoom);
+        } else if (shiftDown) {
           viewState.scroll(dx, dy);
         } else {
           viewState.dotumble(dx, dy, 1);
@@ -182,9 +183,13 @@ public:
         viewState.dolly(dzoom);
       }
     } else if (isOrtho) {
-      // Orthographic view - use scroll/zoom
       if (currentGesture == SCROLL_GESTURE) {
-        viewState.scroll(dx, dy);
+        if (zoomModifier) {
+          viewState.zoom(scrollZoom,
+                         GUI_ViewParameter::GUI_ZoomItem::GUI_ORTHO_WIDTH);
+        } else {
+          viewState.scroll(dx, dy);
+        }
       } else if (currentGesture == PINCH_GESTURE) {
         viewState.zoom(dzoom, GUI_ViewParameter::GUI_ZoomItem::GUI_ORTHO_WIDTH);
       }
@@ -198,6 +203,7 @@ public:
     altDown = event->state.altFlags & UI_ALT_KEY;
     shiftDown = event->state.altFlags & UI_SHIFT_KEY;
     ctrlDown = event->state.altFlags & UI_CTRL_KEY;
+    cmdDown = event->state.altFlags & UI_COMMAND_KEY;
     return false;
   }
   virtual bool handleMouseWheelEvent(const DM_MouseHookData &hook_data,
@@ -205,6 +211,7 @@ public:
     altDown = event->state.altFlags & UI_ALT_KEY;
     shiftDown = event->state.altFlags & UI_SHIFT_KEY;
     ctrlDown = event->state.altFlags & UI_CTRL_KEY;
+    cmdDown = event->state.altFlags & UI_COMMAND_KEY;
     // consume scroll event
     return true;
   }
@@ -237,86 +244,208 @@ HOM_NetworkEditor *getNetworkEditor() {
   return networkEditor;
 }
 
-const uint threshold = 50; // ms
-const float sizeThreshold = 0.3;
-const float zoomThreshold = 1;
-const float zoomThresholdN = -0.3;
+struct NetworkViewUpdate {
+  uint gesture;
+  double tx;
+  double ty;
+  double zoom;
+};
 
-high_resolution_clock::time_point prevTime;
-uint currentGesture = NO_GESTURE;
-uint prevGesture = NO_GESTURE;
-fpreal prevdistance;
+static void applyNetworkViewCallback(void *context) {
+  NetworkViewUpdate *update = static_cast<NetworkViewUpdate *>(context);
+  HOM_NetworkEditor *editor = getNetworkEditor();
+  if (editor != NULL) {
+    if (update->gesture == SCROLL_GESTURE) {
+      editor->translate(HOM_Vector2(update->tx, update->ty));
+    } else if (update->gesture == PINCH_GESTURE) {
+      // Zoom about the cursor in network space so pan is already baked in
+      // (same as hou's scaleAroundMouse).
+      HOM_Vector2 pivot = editor->cursorPosition();
+      HOM_BoundingRect bounds = editor->visibleBounds();
+      const double scale = std::exp(-update->zoom * 0.02);
+      if (scale > 1e-4 && std::isfinite(scale)) {
+        bounds.translate({-pivot.x(), -pivot.y()});
+        bounds.scale({scale, scale});
+        bounds.translate({pivot.x(), pivot.y()});
+        editor->setVisibleBounds(bounds, 0.0);
+      }
+    }
+  }
+  delete update;
+}
+
+void applyNetworkViewOnMainThread(uint gesture, double tx, double ty,
+                                  double zoom) {
+  NetworkViewUpdate *update = new NetworkViewUpdate{gesture, tx, ty, zoom};
+  dispatch_async_f(dispatch_get_main_queue(), update, applyNetworkViewCallback);
+}
+
+// Classify pinch vs tumble from raw MultitouchSupport contacts.
+// Lock the winner for the rest of the two-finger stroke so a noisy frame
+// cannot flip the camera mode mid-gesture.
+const float kMinFingerSize = 0.18;
+const double kSessionTimeout = 0.12;
+const fpreal kMinDecideMotion = 0.012;
+const fpreal kPinchDominance = 1.3;
+const fpreal kTumbleDominance = 1.4;
+const int kMaxUndecidedFrames = 8;
+
+struct GestureRecognizer {
+  uint gesture = NO_GESTURE;
+  bool havePrev = false;
+  int idA = -1;
+  int idB = -1;
+  UT_Vector2D prevA;
+  UT_Vector2D prevB;
+  UT_Vector2D startMid;
+  fpreal startDist = 0;
+  fpreal prevDist = 0;
+  fpreal tumbleEvidence = 0;
+  fpreal pinchEvidence = 0;
+  int frames = 0;
+  double lastTs = 0;
+
+  void reset() {
+    gesture = NO_GESTURE;
+    havePrev = false;
+    idA = -1;
+    idB = -1;
+    startDist = 0;
+    prevDist = 0;
+    tumbleEvidence = 0;
+    pinchEvidence = 0;
+    frames = 0;
+    lastTs = 0;
+  }
+
+  bool samePair(int ia, int ib) const {
+    return (ia == idA && ib == idB) || (ia == idB && ib == idA);
+  }
+
+  bool update(const Finger &fa, const Finger &fb, double ts, fpreal &outZoom,
+              fpreal &outVx, fpreal &outVy) {
+    UT_Vector2D a(fa.normalized.pos.x, fa.normalized.pos.y);
+    UT_Vector2D b(fb.normalized.pos.x, fb.normalized.pos.y);
+    int ia = fa.identifier;
+    int ib = fb.identifier;
+
+    if (havePrev && (ts - lastTs > kSessionTimeout || !samePair(ia, ib))) {
+      reset();
+    }
+
+    const fpreal dist = (a - b).length();
+    const UT_Vector2D mid = (a + b) * 0.5;
+
+    if (!havePrev) {
+      idA = ia;
+      idB = ib;
+      prevA = a;
+      prevB = b;
+      startMid = mid;
+      startDist = dist;
+      prevDist = dist;
+      lastTs = ts;
+      havePrev = true;
+      return false;
+    }
+
+    if (ia == idB && ib == idA) {
+      std::swap(a, b);
+      std::swap(ia, ib);
+    }
+
+    const UT_Vector2D dA = a - prevA;
+    const UT_Vector2D dB = b - prevB;
+    const fpreal speedA = dA.length();
+    const fpreal speedB = dB.length();
+    fpreal coherence = 0;
+    if (speedA > 1e-6 && speedB > 1e-6) {
+      coherence = dA.dot(dB) / (speedA * speedB);
+    }
+
+    const UT_Vector2D prevMid = (prevA + prevB) * 0.5;
+    const fpreal midStep = (mid - prevMid).length();
+    const fpreal distStep = std::abs(dist - prevDist);
+
+    // Same-direction motion votes tumble; opposing / radial motion votes pinch.
+    tumbleEvidence += midStep * (0.6 + 0.4 * std::max(coherence, 0.0));
+    pinchEvidence += distStep * (0.6 + 0.4 * std::max(-coherence, 0.0));
+    frames++;
+
+    if (gesture == NO_GESTURE) {
+      const fpreal midTravel = (mid - startMid).length();
+      const fpreal distTravel = std::abs(dist - startDist);
+      const bool enough = midTravel >= kMinDecideMotion ||
+                          distTravel >= kMinDecideMotion ||
+                          frames >= kMaxUndecidedFrames;
+      if (enough) {
+        if (pinchEvidence > tumbleEvidence * kPinchDominance &&
+            distTravel >= kMinDecideMotion * 0.65) {
+          gesture = PINCH_GESTURE;
+        } else if (tumbleEvidence > pinchEvidence * kTumbleDominance) {
+          gesture = SCROLL_GESTURE;
+        } else if (frames >= kMaxUndecidedFrames) {
+          gesture =
+              (pinchEvidence > tumbleEvidence) ? PINCH_GESTURE : SCROLL_GESTURE;
+        }
+      }
+    }
+
+    outZoom = (dist - prevDist) * 100;
+    outVx = (fa.normalized.vel.x + fb.normalized.vel.x) * 0.5;
+    outVy = (fa.normalized.vel.y + fb.normalized.vel.y) * 0.5;
+
+    prevA = a;
+    prevB = b;
+    prevDist = dist;
+    lastTs = ts;
+    return gesture != NO_GESTURE;
+  }
+};
+
+GestureRecognizer gRecognizer;
+
 int trackpadCallback(int device, Finger *data, int nFingers, double timestamp,
                      int frame) {
-  static int callCount = 0;
-  callCount++;
   RE_Render *render = RE_Render::getMainRender();
-  // this hook supports two finger gestures
   if (nFingers != 2) {
+    gRecognizer.reset();
     return 0;
   }
   bool windowActive = render->getCurrentWindow()->appActive();
   if (!windowActive) {
+    gRecognizer.reset();
     return 0;
   }
   Finger *fa = &data[0];
   Finger *fb = &data[1];
-  if (fa->size < sizeThreshold || fb->size < sizeThreshold) {
+  if (fa->size < kMinFingerSize || fb->size < kMinFingerSize) {
     return 0;
   }
-  // update timestamps
-  high_resolution_clock::time_point time = high_resolution_clock::now();
-  long long elapsedNS = duration_cast<nanoseconds>(time - prevTime).count();
-  float elapsed = elapsedNS / 1000000.0;
-  prevTime = time;
 
-  // calculate zoom factor using distance between fingers
-  UT_Vector2D fap, fbp;
-  fap.assign(fa->normalized.pos.x, fa->normalized.pos.y);
-  fbp.assign(fb->normalized.pos.x, fb->normalized.pos.y);
-  fpreal distance = sqrt(pow(fap.x() - fbp.x(), 2) + pow(fap.y() - fbp.y(), 2));
-  if (elapsed > threshold) {
-    prevdistance = distance;
+  fpreal zoom = 0;
+  fpreal dx = 0;
+  fpreal dy = 0;
+  if (!gRecognizer.update(*fa, *fb, timestamp, zoom, dx, dy)) {
+    return 0;
   }
-  fpreal zoom = (distance - prevdistance) * 100;
-  prevdistance = distance;
-
-  if (elapsed > threshold) {
-    currentGesture = NO_GESTURE;
-  } else if (((zoom > 0 && zoom < zoomThreshold) ||
-              (zoom < 0 && zoom > zoomThresholdN)) &&
-             currentGesture == NO_GESTURE) {
-    currentGesture = SCROLL_GESTURE;
-  } else if (currentGesture == NO_GESTURE) {
-    currentGesture = PINCH_GESTURE;
-  }
-
-  prevGesture = currentGesture;
-
-  fpreal dx = (fa->normalized.vel.x + fb->normalized.vel.x) / 2;
-  fpreal dy = (fa->normalized.vel.y + fb->normalized.vel.y) / 2;
+  const uint currentGesture = gRecognizer.gesture;
 
   HOM_NetworkEditor *networkEditor = getNetworkEditor();
   if (networkEditor != NULL) {
-    // calculate average velocity of the two fingers together
-    auto bounds = networkEditor->visibleBounds();
+    HOM_BoundingRect bounds = networkEditor->visibleBounds();
     double bx = bounds.size().x();
     double by = bounds.size().y();
     const float scrollScale = 0.02;
-    const float zoomScale = 0.02;
-    if (currentGesture == SCROLL_GESTURE) {
-      bounds.translate({-dx * bx * scrollScale, -dy * by * scrollScale});
-    } else if (currentGesture == PINCH_GESTURE) {
-      bounds.expand({-zoom * bx * zoomScale, -zoom * by * zoomScale});
-    }
+    applyNetworkViewOnMainThread(
+        currentGesture, -dx * bx * scrollScale, -dy * by * scrollScale, zoom);
     return 0;
   }
 
-  UT_Map<int, DM_TrackpadEventHook *>::iterator it;
   if (mouseHooks.size() == 0) {
     return 0;
   }
-  for (it = mouseHooks.begin(); it != mouseHooks.end(); ++it) {
+  for (auto it = mouseHooks.begin(); it != mouseHooks.end(); ++it) {
     it->second->trackpadCallback(currentGesture, zoom, dx, dy);
   }
   return 0;
