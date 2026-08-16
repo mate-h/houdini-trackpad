@@ -10,40 +10,30 @@ Controls:
 - Zoom with Ctrl/Cmd + two-finger scroll, or pinch
 - In the network editor, two-finger scroll pans (no Shift) and pinch zooms
 
-Coming in `v0.3`:
-
-- Rotate using rotate gesture
-
-[Download v0.2 pre-release](https://github.com/mate-h/houdini-trackpad/releases/download/0.2/TrackpadHook.dylib)
+[Download v0.3](https://github.com/mate-h/houdini-trackpad/releases/download/0.3/TrackpadHook.dylib)
 
 Place the `TrackpadHook.dylib` binary in `~/Library/Preferences/houdini/[version]/dso` in order to install.
 
 ## Build from source
 
 ```bash
-# Set your Houdini version (change this to your version of Houdini installation)
-export VERSION=21.0.512
-
-# Source Houdini environment
-source /Applications/Houdini/Houdini$VERSION/Frameworks/Houdini.framework/Versions/Current/Resources/houdini_setup
-
-# If you haven't cloned the repo yet:
-# git clone https://github.com/mate-h/houdini-trackpad
-# cd houdini-trackpad
-
-# Create build directory and build
 mkdir -p build
 cd build
 cmake ../src
 make
 ```
 
-The `make` command will automatically build and install the `TrackpadHook.dylib` library directly to your Houdini DSO directory (e.g., `~/Library/Preferences/houdini/21.0/dso/TrackpadHook.dylib`). No separate installation step is needed - the library is ready to use after building!
+CMake finds Houdini at `/Applications/Houdini/Current`. `make` installs `TrackpadHook.dylib` into your Houdini DSO folder (e.g. `~/Library/Preferences/houdini/22.0/dso/`). Restart Houdini after building.
+
+To target a specific install, set `HFS` to that build's Resources directory before running cmake:
+
+```bash
+export HFS=/Applications/Houdini/Houdini22.0.368/Frameworks/Houdini.framework/Versions/Current/Resources
+```
 
 ## Run test program with python
 
 ```bash
-python3 -m pip install -U pygame==2.0.0.dev6 --user
-python3 -m pip install -U numpy --user
+python3 -m pip install -U pygame numpy --user
 python3 src/scripts/multitouch-test.py
 ```
